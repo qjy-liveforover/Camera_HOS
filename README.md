@@ -6,6 +6,7 @@ A professional video recording application built with HarmonyOS Camera2 API, fea
 
 - **Camera2 API Integration**: Professional-grade video recording using HarmonyOS Camera2 interfaces
 - **Picture-in-Picture (PiP) Mode**: Continue recording while using other apps
+  - **Background Recording Solution**: Running the native camera in background would normally cause the system to automatically kill the recording thread. This app uses Picture-in-Picture (PiP) mode with a hidden sidebar position to effectively achieve background recording with the front camera. The PiP window keeps the camera service alive while being minimally intrusive.
 - **Real-time Parameter Display**: View resolution, frame rate, bitrate, codec info during recording
 - **Gallery Integration**: Save recorded videos directly to photo gallery with system SaveButton
 - **Front Camera Support**: Optimized preview with mirror effect for front camera

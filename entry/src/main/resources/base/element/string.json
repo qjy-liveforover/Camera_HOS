@@ -1,0 +1,36 @@
+{
+  "string": [
+    {
+      "name": "module_desc",
+      "value": "Background Video Recorder"
+    },
+    {
+      "name": "EntryAbility_desc",
+      "value": "Background Video Recorder"
+    },
+    {
+      "name": "EntryAbility_label",
+      "value": "BG Recorder"
+    },
+    {
+      "name": "camera_reason",
+      "value": "Need camera for video recording"
+    },
+    {
+      "name": "microphone_reason",
+      "value": "Need microphone for audio recording"
+    },
+    {
+      "name": "background_reason",
+      "value": "Need background recording"
+    },
+    {
+      "name": "media_reason",
+      "value": "Need to save video files"
+    },
+    {
+      "name": "pip_reason",
+      "value": "Need PiP for background recording"
+    }
+  ]
+}

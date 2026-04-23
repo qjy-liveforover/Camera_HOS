@@ -1,0 +1,20 @@
+{
+  "color": [
+    {
+      "name": "start_window_background",
+      "value": "#FFFFFF"
+    },
+    {
+      "name": "camera_preview_background",
+      "value": "#000000"
+    },
+    {
+      "name": "button_cancel_background",
+      "value": "#f0f0f0"
+    },
+    {
+      "name": "button_cancel_text",
+      "value": "#333333"
+    }
+  ]
+}

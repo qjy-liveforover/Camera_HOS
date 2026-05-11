@@ -22,7 +22,7 @@ struct Index {
   @State videoInfo: string = 'Waiting...';
   @State currentResolution: string = '';
   @State showInfo: boolean = false;
-  // 动态录制参数
+  // Dynamic recording parameters
   @State currentFrameRate: number = 0;
   @State currentVideoBitrate: number = 0;
   @State currentAudioBitrate: number = 0;
@@ -88,7 +88,7 @@ struct Index {
     return `${h.toString().padStart(2, '0')}:${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
   }
 
-  // 获取分辨率名称
+  // Get resolution display name
   getResolutionName(resolution: string): string {
     const parts = resolution.split('x');
     const w = parseInt(parts[0]);
@@ -106,7 +106,7 @@ struct Index {
     return 'SD';
   }
 
-  // 格式化比特率
+  // Format bitrate for display
   formatBitrate(bitrate: number): string {
     if (bitrate >= 1000000) {
       return `${Math.round(bitrate / 1000000)}Mbps`;
@@ -152,7 +152,7 @@ struct Index {
         this.currentResolution = match[1];
       }
       
-      // 获取并更新实际录制参数
+      // Get and update actual recording parameters
       const params = this.recordingManager.getRecordingParams();
       if (params) {
         this.currentFrameRate = params.frameRate;
@@ -166,14 +166,14 @@ struct Index {
         this.currentStabilization = params.stabilization ?? '';
         this.currentColorSpace = params.colorSpace ?? '';
         
-        // 更新videoInfo显示
+        // Update videoInfo display
         const resName = this.getResolutionName(params.resolution);
         this.videoInfo = `${resName} (${params.resolution}) @ ${params.frameRate}fps`;
         
         hilog.info(DOMAIN, TAG, `Recording params updated: ${JSON.stringify(params)}`);
       }
       
-      if (result.includes('started') || result.includes('已开始')) {
+      if (result.includes('started')) {
         this.isRecording = true;
         this.statusText = 'REC';
         this.startTimer();
@@ -357,7 +357,7 @@ struct Index {
               .fontColor(Color.White)
               .margin({ bottom: 12 })
 
-            // 动态显示实际参数
+            // Dynamically show actual parameters
             Text(`Resolution: ${this.currentResolution ? this.getResolutionName(this.currentResolution) + ' (' + this.currentResolution + ')' : 'Detecting...'}`)
               .fontSize(13)
               .fontColor('#CCCCCC')

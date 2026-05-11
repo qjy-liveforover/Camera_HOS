@@ -32,19 +32,19 @@ export class PiPController {
     try {
       hilog.info(DOMAIN, TAG, 'Creating PiP controller...');
       
-      // 使用 VIDEO_CALL 模板，更适合相机录像场景
+      // Use VIDEO_CALL template, more suitable for camera recording scenario
       this.pipController = await PiPWindow.create({
         context: this.context,
         componentController: this.xComponentController,
         templateType: PiPWindow.PiPTemplateType.VIDEO_CALL
       });
 
-      // 注册状态监听
+      // Register state listener
       this.pipController.on('stateChange', (state: PiPWindow.PiPState, reason: string) => {
         this.onStateChange(state, reason);
       });
 
-      // 启用自动启动（退后台自动进入画中画）
+      // Enable auto-start (auto enter PiP when moving to background)
       this.pipController.setAutoStartEnabled(true);
       
       hilog.info(DOMAIN, TAG, 'PiP controller created successfully');
@@ -77,7 +77,7 @@ export class PiPController {
     }
   }
 
-  // 更新画中画窗口内容比例
+  // Update PiP window content aspect ratio
   private updateContentSize(width: number, height: number): void {
     if (!this.pipController) {
       return;

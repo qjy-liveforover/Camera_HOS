@@ -21,7 +21,7 @@ export class BackgroundTaskManager {
     }
 
     try {
-      // 从 hapModuleInfo 获取 bundleName
+      // Get bundleName from hapModuleInfo
       const bundleName = this.context.abilityInfo.bundleName;
       hilog.info(DOMAIN, TAG, `Starting background task for: ${bundleName}`);
       

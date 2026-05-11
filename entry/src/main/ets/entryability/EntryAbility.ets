@@ -7,7 +7,7 @@ import { BackgroundTaskManager } from '../background/BackgroundTaskManager';
 const DOMAIN = 0xFF00;
 const TAG = 'EntryAbility';
 
-// 全局录像管理器
+// Global recording manager
 export class RecordingManager {
   private static instance: RecordingManager | null = null;
   private videoRecorder: CameraVideoRecorder | null = null;
@@ -80,7 +80,7 @@ export class RecordingManager {
       }
 
       const result = await this.videoRecorder.startRecording();
-      if (result.includes('started') || result.includes('已开始')) {
+      if (result.includes('started')) {
         this.isRecording = true;
         hilog.info(DOMAIN, TAG, 'Recording started');
       } else {
@@ -112,11 +112,11 @@ export class RecordingManager {
       }
 
       this.isRecording = false;
-      return '录像已停止';
+      return 'Recording stopped';
     } catch (error) {
       hilog.error(DOMAIN, TAG, `Stop recording error: ${error}`);
       this.isRecording = false;
-      return `停止失败: ${error}`;
+      return `Stop failed: ${error}`;
     }
   }
 
@@ -132,7 +132,7 @@ export class RecordingManager {
     return this.isRecording;
   }
 
-  // 获取当前录制参数
+  // Get current recording parameters
   getRecordingParams(): RecordingParams | null {
     return this.videoRecorder?.getRecordingParams() || null;
   }
@@ -153,7 +153,7 @@ export default class EntryAbility extends UIAbility {
     }
     hilog.info(DOMAIN, TAG, 'Ability onCreate');
     
-    // 初始化录像管理器
+    // Initialize recording manager
     RecordingManager.getInstance().setContext(this.context);
   }
 

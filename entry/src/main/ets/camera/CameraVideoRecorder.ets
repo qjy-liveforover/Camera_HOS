@@ -4,6 +4,7 @@ import { common } from '@kit.AbilityKit';
 import { BusinessError } from '@kit.BasicServicesKit';
 import { fileIo as fs } from '@kit.CoreFileKit';
 import { hilog } from '@kit.PerformanceAnalysisKit';
+import { colorSpaceManager } from '@kit.ArkGraphics2D';
 
 const TAG = 'CameraVideoRecorder';
 const DOMAIN = 0xFF00;
@@ -17,7 +18,10 @@ export interface RecordingParams {
   videoCodec: string;       // 视频编码器
   audioCodec: string;       // 音频编码器
   isHdr: boolean;           // 是否HDR
+  isHdrVivid: boolean;      // 是否HDR Vivid
   aspectRatio: string;      // 宽高比
+  stabilization: string;    // 防抖模式
+  colorSpace: string;       // 色彩空间
 }
 
 export class CameraVideoRecorder {
@@ -37,6 +41,9 @@ export class CameraVideoRecorder {
   private videoProfile: camera.VideoProfile | null = null;
   private previewProfile: camera.Profile | null = null;
   private recordingParams: RecordingParams | null = null;  // 当前录制参数
+  private isHdrVivid: boolean = false;       // 是否HDR Vivid
+  private stabilizationMode: string = 'OFF';  // 当前防抖模式
+  private activeColorSpace: string = 'BT709'; // 当前色彩空间
   
   constructor(context: common.UIAbilityContext) {
     this.context = context;
@@ -136,6 +143,9 @@ export class CameraVideoRecorder {
       hilog.info(DOMAIN, TAG, 'Committing preview session config');
       await this.videoSession.commitConfig();
       
+      // Mate 70 Pro+ 最佳质量配置
+      await this.applyBestQualityEnhancements();
+      
       hilog.info(DOMAIN, TAG, 'Starting preview session');
       await this.videoSession.start();
       
@@ -165,67 +175,79 @@ export class CameraVideoRecorder {
       return null;
     }
 
-    // 收集所有4K profile并选择最高帧率的
-    const portrait4K: camera.VideoProfile[] = [];
-    const landscape4K: camera.VideoProfile[] = [];
-    const otherProfiles: camera.VideoProfile[] = [];
-    
+    // Mate 70 Pro+ 最佳录制策略：优先选择 HDR(P010) 格式的最高分辨率和最高帧率
+    // HDR Vivid 格式: CAMERA_FORMAT_YCBCR_P010 或 CAMERA_FORMAT_YCRCB_P010
+    const isHdrFormat = (format: camera.CameraFormat): boolean => {
+      return format === camera.CameraFormat.CAMERA_FORMAT_YCBCR_P010 ||
+             format === camera.CameraFormat.CAMERA_FORMAT_YCRCB_P010;
+    };
+
+    // Step 1: 收集 HDR 4K profile (最高质量)
+    const hdr4KProfiles: camera.VideoProfile[] = [];
+    const sdr4KProfiles: camera.VideoProfile[] = [];
+    const hdrProfiles: camera.VideoProfile[] = [];
+    const sdrProfiles: camera.VideoProfile[] = [];
+
     for (const profile of videoProfiles) {
       const w = profile.size.width;
       const h = profile.size.height;
       const fps = profile.frameRateRange?.max || 30;
-      hilog.info(DOMAIN, TAG, `Video profile: ${w}x${h} @ ${fps}fps`);
-      
-      if (w === 2160 && h === 3840) {
-        portrait4K.push(profile);
-      } else if (w === 3840 && h === 2160) {
-        landscape4K.push(profile);
-      } else {
-        otherProfiles.push(profile);
-      }
-    }
-    
-    // 选择最高帧率的profile
-    let bestProfile: camera.VideoProfile | null = null;
-    let maxFps = 0;
-    
-    // 优先选择portrait 4K
-    for (const p of portrait4K) {
-      const fps = p.frameRateRange?.max || 30;
-      if (fps > maxFps) {
-        maxFps = fps;
-        bestProfile = p;
-      }
-    }
-    
-    // 其次选择landscape 4K
-    if (!bestProfile) {
-      for (const p of landscape4K) {
-        const fps = p.frameRateRange?.max || 30;
-        if (fps > maxFps) {
-          maxFps = fps;
-          bestProfile = p;
+      const pixels = w * h;
+      hilog.info(DOMAIN, TAG, `Video profile: ${w}x${h} @ ${fps}fps, format=${profile.format}`);
+
+      if (pixels >= 3840 * 2160) {
+        // 4K+
+        if (isHdrFormat(profile.format)) {
+          hdr4KProfiles.push(profile);
+        } else {
+          sdr4KProfiles.push(profile);
         }
-      }
-    }
-    
-    // 最后选择其他最高分辨率
-    if (!bestProfile) {
-      let maxPixels = 0;
-      for (const p of otherProfiles) {
-        const pixels = p.size.width * p.size.height;
-        const fps = p.frameRateRange?.max || 30;
-        if (pixels > maxPixels || (pixels === maxPixels && fps > maxFps)) {
-          maxPixels = pixels;
-          maxFps = fps;
-          bestProfile = p;
+      } else {
+        if (isHdrFormat(profile.format)) {
+          hdrProfiles.push(profile);
+        } else {
+          sdrProfiles.push(profile);
         }
       }
     }
 
+    // 选择策略：HDR 4K > SDR 4K > HDR lower > SDR lower
+    // 每种优先选择最高帧率和最大分辨率
+    const selectBestFromList = (profiles: camera.VideoProfile[]): camera.VideoProfile | null => {
+      if (profiles.length === 0) return null;
+      let best: camera.VideoProfile | null = null;
+      let bestScore = 0;
+      for (const p of profiles) {
+        const fps = p.frameRateRange?.max || 30;
+        const pixels = p.size.width * p.size.height;
+        // Score: pixels as primary, fps as secondary weight
+        const score = pixels + fps * 10000;
+        if (score > bestScore) {
+          bestScore = score;
+          best = p;
+        }
+      }
+      return best;
+    };
+
+    let bestProfile = selectBestFromList(hdr4KProfiles);
+    if (bestProfile) {
+      this.isHdrVivid = true;
+      hilog.info(DOMAIN, TAG, `HDR Vivid 4K selected: ${bestProfile.size.width}x${bestProfile.size.height} @ ${bestProfile.frameRateRange?.max}fps`);
+    } else {
+      bestProfile = selectBestFromList(sdr4KProfiles);
+    }
+    if (!bestProfile) {
+      bestProfile = selectBestFromList(hdrProfiles);
+      if (bestProfile) this.isHdrVivid = true;
+    }
+    if (!bestProfile) {
+      bestProfile = selectBestFromList(sdrProfiles);
+    }
+
     if (bestProfile) {
       const fps = bestProfile.frameRateRange?.max || 30;
-      hilog.info(DOMAIN, TAG, `Selected video profile: ${bestProfile.size.width}x${bestProfile.size.height} @ ${fps}fps`);
+      hilog.info(DOMAIN, TAG, `Selected video profile: ${bestProfile.size.width}x${bestProfile.size.height} @ ${fps}fps, HDR:${this.isHdrVivid}`);
     }
     return bestProfile;
   }
@@ -261,6 +283,84 @@ export class CameraVideoRecorder {
     // Fallback to first profile
     hilog.warn(DOMAIN, TAG, `No matching aspect ratio, using first: ${previewProfiles[0].size.width}x${previewProfiles[0].size.height}`);
     return previewProfiles[0];
+  }
+
+  // Apply Mate 70 Pro+ best quality enhancements: stabilization, color space, quality prioritization
+  private async applyBestQualityEnhancements(): Promise<void> {
+    if (!this.videoSession) return;
+
+    // 1. 视频防抖 - Mate 70 Pro+ 支持高级防抖
+    this.applyVideoStabilization();
+
+    // 2. 色彩空间 - HDR Vivid 使用 BT2020_HLG, SDR 使用 BT709
+    this.applyColorSpace();
+
+    // 3. 质量优先级设为最高质量
+    this.applyQualityPrioritization();
+  }
+
+  // 设置视频防抖为最高级别
+  private applyVideoStabilization(): void {
+    if (!this.videoSession) return;
+    
+    try {
+      // Mate 70 Pro+ 尝试使用 HIGH 级别防抖
+      const modes: camera.VideoStabilizationMode[] = [
+        camera.VideoStabilizationMode.HIGH,
+        camera.VideoStabilizationMode.MIDDLE,
+        camera.VideoStabilizationMode.LOW,
+        camera.VideoStabilizationMode.AUTO
+      ];
+      
+      for (const mode of modes) {
+        const supported = this.videoSession.isVideoStabilizationModeSupported(mode);
+        if (supported) {
+          this.videoSession.setVideoStabilizationMode(mode);
+          const active = this.videoSession.getActiveVideoStabilizationMode();
+          this.stabilizationMode = mode.toString();
+          hilog.info(DOMAIN, TAG, `Video stabilization set: ${mode} (active: ${active})`);
+          return;
+        }
+      }
+      hilog.info(DOMAIN, TAG, 'Video stabilization not supported');
+    } catch (e) {
+      hilog.warn(DOMAIN, TAG, `Video stabilization error: ${(e as BusinessError).message}`);
+    }
+  }
+
+  // 设置色彩空间：HDR Vivid 用 BT2020_HLG, 否则用 BT709
+  private applyColorSpace(): void {
+    if (!this.videoSession) return;
+    
+    try {
+      const targetColorSpace = this.isHdrVivid
+        ? colorSpaceManager.ColorSpace.BT2020_HLG_LIMIT
+        : colorSpaceManager.ColorSpace.BT709_LIMIT;
+      
+      const supportedSpaces = this.videoSession.getSupportedColorSpaces();
+      if (supportedSpaces.indexOf(targetColorSpace) >= 0) {
+        this.videoSession.setColorSpace(targetColorSpace);
+        const active = this.videoSession.getActiveColorSpace();
+        this.activeColorSpace = targetColorSpace.toString();
+        hilog.info(DOMAIN, TAG, `Color space set: ${targetColorSpace} (active: ${active})`);
+      } else {
+        hilog.info(DOMAIN, TAG, `Color space ${targetColorSpace} not supported, available: ${supportedSpaces}`);
+      }
+    } catch (e) {
+      hilog.warn(DOMAIN, TAG, `Color space error: ${(e as BusinessError).message}`);
+    }
+  }
+
+  // 设置录像质量优先级为最高画质
+  private applyQualityPrioritization(): void {
+    if (!this.videoSession) return;
+    
+    try {
+      this.videoSession.setQualityPrioritization(camera.QualityPrioritization.HIGH_QUALITY);
+      hilog.info(DOMAIN, TAG, 'Quality prioritization set to HIGH_QUALITY');
+    } catch (e) {
+      hilog.warn(DOMAIN, TAG, `Quality prioritization error: ${(e as BusinessError).message}`);
+    }
   }
 
   private selectFrontCamera(): camera.CameraDevice | null {
@@ -321,33 +421,43 @@ export class CameraVideoRecorder {
 
       // 获取设备支持的最高帧率
       const maxFrameRate = this.videoProfile.frameRateRange?.max || 60;
-      hilog.info(DOMAIN, TAG, `Max frame rate from device: ${maxFrameRate}fps`);
+      hilog.info(DOMAIN, TAG, `Max frame rate from device: ${maxFrameRate}fps, HDR Vivid: ${this.isHdrVivid}`);
       
-      // 根据分辨率计算最佳比特率
-      // 4K: 50-100Mbps, 1080p: 20-50Mbps
+      // Mate 70 Pro+ 最佳比特率计算
+      // HDR Vivid 4K: 120-160Mbps, SDR 4K: 100-120Mbps, 1080p: 60-80Mbps
       const pixels = this.videoProfile.size.width * this.videoProfile.size.height;
       let videoBitrate: number;
       if (pixels >= 3840 * 2160) {
-        // 4K: 使用更高比特率，根据帧率调整
-        videoBitrate = Math.round(80000000 * (maxFrameRate / 60)); // 基准80Mbps@60fps
-        videoBitrate = Math.min(videoBitrate, 120000000); // 最大120Mbps
+        if (this.isHdrVivid) {
+          // HDR Vivid 4K+: base 140Mbps @ 60fps, max 160Mbps
+          videoBitrate = Math.round(140000000 * (maxFrameRate / 60));
+          videoBitrate = Math.min(videoBitrate, 160000000);
+        } else {
+          // SDR 4K+: base 100Mbps @ 60fps, max 120Mbps
+          videoBitrate = Math.round(100000000 * (maxFrameRate / 60));
+          videoBitrate = Math.min(videoBitrate, 120000000);
+        }
       } else if (pixels >= 1920 * 1080) {
-        // 1080p
-        videoBitrate = Math.round(40000000 * (maxFrameRate / 60)); // 基准40Mbps@60fps
-        videoBitrate = Math.min(videoBitrate, 60000000); // 最大60Mbps
+        // 1080p: base 60Mbps @ 60fps, max 80Mbps
+        videoBitrate = Math.round(60000000 * (maxFrameRate / 60));
+        videoBitrate = Math.min(videoBitrate, 80000000);
       } else {
         // 其他分辨率
-        videoBitrate = Math.round(pixels * maxFrameRate * 0.5); // 根据像素和帧率计算
+        videoBitrate = Math.round(pixels * maxFrameRate * 0.8);
       }
       hilog.info(DOMAIN, TAG, `Calculated video bitrate: ${videoBitrate / 1000000}Mbps`);
       
-      // 音频比特率使用高质量128kbps
-      const audioBitrate = 128000;
+      // 音频比特率使用高质量 256kbps (AAC-LC stereo)
+      const audioBitrate = 256000;
+
+      // Mate 70 Pro+: 优先使用 HEVC/H.265 编码以获得最佳画质
+      // HDR 必须使用 HEVC, SDR 也推荐 HEVC
+      const useHevc = isHdr || this.isHdrVivid || true; // 强制使用 HEVC 最佳画质
 
       const recorderProfile: media.AVRecorderProfile = {
         fileFormat: media.ContainerFormatType.CFT_MPEG_4,
         videoBitrate: videoBitrate,
-        videoCodec: isHdr ? media.CodecMimeType.VIDEO_HEVC : media.CodecMimeType.VIDEO_AVC,
+        videoCodec: useHevc ? media.CodecMimeType.VIDEO_HEVC : media.CodecMimeType.VIDEO_AVC,
         videoFrameWidth: this.videoProfile.size.width,
         videoFrameHeight: this.videoProfile.size.height,
         videoFrameRate: maxFrameRate,
@@ -368,10 +478,13 @@ export class CameraVideoRecorder {
         frameRate: maxFrameRate,
         videoBitrate: videoBitrate,
         audioBitrate: audioBitrate,
-        videoCodec: isHdr ? 'H.265 HEVC' : 'H.264 AVC',
+        videoCodec: useHevc ? 'H.265 HEVC' : 'H.264 AVC',
         audioCodec: 'AAC',
         isHdr: isHdr,
-        aspectRatio: w > h ? `${ratio} Landscape` : `${ratio} Portrait`
+        isHdrVivid: this.isHdrVivid,
+        aspectRatio: w > h ? `${ratio} Landscape` : `${ratio} Portrait`,
+        stabilization: this.stabilizationMode,
+        colorSpace: this.activeColorSpace
       };
       hilog.info(DOMAIN, TAG, `Recording params: ${JSON.stringify(this.recordingParams)}`);
 
@@ -455,7 +568,8 @@ export class CameraVideoRecorder {
       await this.avRecorder.start();
 
       this.isRecording = true;
-      return `Recording started (${this.videoProfile.size.width}x${this.videoProfile.size.height})`;
+      const hdrLabel = this.isHdrVivid ? ' HDR Vivid' : (isHdr ? ' HDR' : '');
+      return `Recording started (${this.videoProfile.size.width}x${this.videoProfile.size.height}${hdrLabel})`;
     } catch (error) {
       const err = error as BusinessError;
       hilog.error(DOMAIN, TAG, `Start recording failed: ${err.code} - ${err.message}`);

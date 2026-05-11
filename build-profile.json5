@@ -5,13 +5,13 @@
         "name": "default",
         "type": "HarmonyOS",
         "material": {
-          "certpath": "C:\\Users\\94279\\.ohos\\config\\default_Camera2_3MT3aPucL8qdvMNu-CCY5wbCx9E1UmbN499GNdm1zdw=.cer",
+          "certpath": "C:\\Users\\94279\\.ohos\\config\\default_Camera2_Git_Rm3UyyoGITf3gd6GSinngW5HOpoTeXvPAoBk5bCBK-g=.cer",
           "keyAlias": "debugKey",
-          "keyPassword": "0000001A8E5CE61BCF173ED7C68A5876D36430C895CFAF3A67E25D3F8597ED2D95CE483E9C306E367E49",
-          "profile": "C:\\Users\\94279\\.ohos\\config\\default_Camera2_3MT3aPucL8qdvMNu-CCY5wbCx9E1UmbN499GNdm1zdw=.p7b",
+          "keyPassword": "0000001B6E9CF1F3F742492BA25CD9F4A8F983E573D04AF450C9BED47F71DB7E11A0C63C8847F3A31EFF24",
+          "profile": "C:\\Users\\94279\\.ohos\\config\\default_Camera2_Git_Rm3UyyoGITf3gd6GSinngW5HOpoTeXvPAoBk5bCBK-g=.p7b",
           "signAlg": "SHA256withECDSA",
-          "storeFile": "C:\\Users\\94279\\.ohos\\config\\default_Camera2_3MT3aPucL8qdvMNu-CCY5wbCx9E1UmbN499GNdm1zdw=.p12",
-          "storePassword": "0000001A03256016897AE8F12151BFD7D0D4A503A5CB637B87BF5A9AA869F6596C2778F70BD26CBBD6BB"
+          "storeFile": "C:\\Users\\94279\\.ohos\\config\\default_Camera2_Git_Rm3UyyoGITf3gd6GSinngW5HOpoTeXvPAoBk5bCBK-g=.p12",
+          "storePassword": "0000001B6F0FDC563B220FB04CE0E8D451F6E3D6B64920824376F0381C1B43DB80C04DD9D7CA9297F6C6BF"
         }
       }
     ],

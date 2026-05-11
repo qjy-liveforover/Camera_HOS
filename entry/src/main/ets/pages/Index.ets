@@ -29,7 +29,10 @@ struct Index {
   @State currentVideoCodec: string = '';
   @State currentAudioCodec: string = '';
   @State currentIsHdr: boolean = false;
+  @State currentIsHdrVivid: boolean = false;
   @State currentAspectRatio: string = '';
+  @State currentStabilization: string = '';
+  @State currentColorSpace: string = '';
   
   private context: common.UIAbilityContext | null = null;
   private recordingManager: RecordingManager | null = null;
@@ -158,7 +161,10 @@ struct Index {
         this.currentVideoCodec = params.videoCodec;
         this.currentAudioCodec = params.audioCodec;
         this.currentIsHdr = params.isHdr;
+        this.currentIsHdrVivid = params.isHdrVivid ?? false;
         this.currentAspectRatio = params.aspectRatio;
+        this.currentStabilization = params.stabilization ?? '';
+        this.currentColorSpace = params.colorSpace ?? '';
         
         // 更新videoInfo显示
         const resName = this.getResolutionName(params.resolution);
@@ -372,18 +378,29 @@ struct Index {
               .fontSize(13)
               .fontColor('#CCCCCC')
               .margin({ bottom: 6 })
-            Text(`Audio: ${this.currentAudioCodec || 'AAC'} ${this.currentAudioBitrate ? this.formatBitrate(this.currentAudioBitrate) : '128kbps'}`)
+            Text(`Audio: ${this.currentAudioCodec || 'AAC'} ${this.currentAudioBitrate ? this.formatBitrate(this.currentAudioBitrate) : '256kbps'}`)
               .fontSize(13)
               .fontColor('#CCCCCC')
               .margin({ bottom: 6 })
-            if (this.currentIsHdr) {
+            if (this.currentIsHdrVivid) {
+              Text('HDR Vivid: Enabled')
+                .fontSize(13)
+                .fontColor('#FFD700')
+                .margin({ bottom: 6 })
+            } else if (this.currentIsHdr) {
               Text('HDR: Enabled')
                 .fontSize(13)
                 .fontColor('#00FF00')
-                .margin({ bottom: 12 })
-            } else {
-              Blank().height(6)
+                .margin({ bottom: 6 })
             }
+            Text(`Stabilization: ${this.currentStabilization || 'Detecting...'}`)
+              .fontSize(13)
+              .fontColor('#CCCCCC')
+              .margin({ bottom: 6 })
+            Text(`Color Space: ${this.currentColorSpace || 'Detecting...'}`)
+              .fontSize(13)
+              .fontColor('#CCCCCC')
+              .margin({ bottom: 12 })
 
             Text('Features')
               .fontSize(16)
@@ -391,7 +408,11 @@ struct Index {
               .fontColor(Color.White)
               .margin({ bottom: 12 })
 
-            Text('• Front camera recording')
+            Text('• Mate 70 Pro+ front cam')
+              .fontSize(13)
+              .fontColor('#CCCCCC')
+              .margin({ bottom: 4 })
+            Text('• HDR Vivid + HEVC encoding')
               .fontSize(13)
               .fontColor('#CCCCCC')
               .margin({ bottom: 4 })

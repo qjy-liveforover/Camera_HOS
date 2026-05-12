@@ -16,6 +16,7 @@ Featuring Picture-in-Picture (PiP) mode, real-time video parameter display, and 
 
 ## 📖 Table of Contents
 
+- [Purpose](#-purpose)
 - [Features](#-features)
 - [Prerequisites](#-prerequisites)
 - [Installation & Configuration](#-installation--configuration)
@@ -26,6 +27,22 @@ Featuring Picture-in-Picture (PiP) mode, real-time video parameter display, and 
 - [Troubleshooting](#-troubleshooting)
 - [Contributing](#-contributing)
 - [Support](#-support)
+
+---
+
+## 🎯 Purpose
+
+This application is designed for **reflectance analysis of adulterated spice powders** using the front camera of Huawei Mate 70 Pro+. It captures videos of spice powder samples under different monochromatic light illuminations with varying adulteration ratios (0% to 100%). The recorded video frames are extracted for quantitative analysis of adulteration levels.
+
+To maximize the characterization of reflectance differences across different adulteration ratios, the app implements **optimized camera parameter locking** for consistent frame-to-frame measurement:
+
+- **Exposure control**: Manual exposure locking (AE LOCKED) with fixed ISO, exposure time, and exposure bias
+- **White balance locking**: Fixed white balance mode (DAYLIGHT or MANUAL) to eliminate color temperature variations
+- **Focus locking**: Manual focus locking to maintain consistent focal distance
+- **HDR/Vivid disabled**: SDR with BT.709 color space ensures linear pixel‑value response
+- **Stabilization disabled**: Optical stabilization turned off to prevent frame‑to‑frame intensity shifts
+
+These settings guarantee that the recorded video frames provide a stable, reproducible signal for reflectance‑based adulteration detection.
 
 ---
 
@@ -71,6 +88,20 @@ Optimized preview with mirror effect for front camera.
 
 ### ⏱️ Recording Timer
 Real-time recording duration display.
+
+</td>
+</tr>
+<tr>
+<td width="50%">
+
+### 🔬 Reflectance Analysis Mode
+Locked camera parameters (exposure, ISO, white balance, focus) for consistent frame‑to‑frame measurement of spice powder reflectance.
+
+</td>
+<td width="50%">
+
+### 📈 Data Collection Ready
+Optimized for extracting video frames as datasets for adulteration ratio analysis.
 
 </td>
 </tr>

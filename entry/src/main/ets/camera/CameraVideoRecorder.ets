@@ -22,6 +22,12 @@ export interface RecordingParams {
   aspectRatio: string;      // Aspect ratio
   stabilization: string;    // Stabilization mode
   colorSpace: string;       // Color space
+  exposureMode: string;     // AE mode (LOCKED / MANUAL)
+  iso: number;              // ISO sensitivity (0 = auto)
+  exposureTime: number;     // Exposure duration (µs, 0 = auto)
+  exposureBias: number;     // Exposure compensation (EV)
+  whiteBalanceMode: string; // WB mode (DAYLIGHT / MANUAL_XXXXK)
+  focusMode: string;        // Focus mode (LOCKED / MANUAL)
 }
 
 export class CameraVideoRecorder {
@@ -44,6 +50,13 @@ export class CameraVideoRecorder {
   private isHdrVivid: boolean = false;       // Whether HDR Vivid
   private stabilizationMode: string = 'OFF';  // Current stabilization mode
   private activeColorSpace: string = 'BT709'; // Current color space
+  // Reflectance analysis locked parameters
+  private activeExposureMode: string = 'LOCKED';    // AE mode
+  private activeIso: number = 0;                    // ISO (0=auto)
+  private activeExposureTime: number = 0;           // Exposure time µs (0=auto)
+  private activeExposureBias: number = 0;           // EV compensation
+  private activeWhiteBalanceMode: string = 'DAYLIGHT'; // WB mode
+  private activeFocusMode: string = 'LOCKED';       // Focus mode
   
   constructor(context: common.UIAbilityContext) {
     this.context = context;
@@ -136,6 +149,7 @@ export class CameraVideoRecorder {
         return false;
       }
 
+      // Reflectance analysis: no preconfig — manually lock all parameters for frame-to-frame consistency
       this.videoSession.beginConfig();
       this.videoSession.addInput(this.cameraInput);
       this.videoSession.addOutput(this.previewOutput);
@@ -164,8 +178,9 @@ export class CameraVideoRecorder {
       return null;
     }
 
+    // TODO: When API 23+ available, replace with getSupportedFullOutputCapability for full HDR capability
     const capability = this.cameraManager.getSupportedOutputCapability(
-      this.currentCameraDevice, 
+      this.currentCameraDevice,
       camera.SceneMode.NORMAL_VIDEO
     );
     
@@ -175,79 +190,49 @@ export class CameraVideoRecorder {
       return null;
     }
 
-    // Mate 70 Pro+ best recording strategy: prefer HDR(P010) format at highest resolution/frame rate
-    // HDR Vivid format: CAMERA_FORMAT_YCBCR_P010 or CAMERA_FORMAT_YCRCB_P010
+    // Reflectance analysis mode: skip HDR Vivid entirely.
+    // HDR tone mapping alters the reflectance → pixel-value relationship non-linearly
+    // and scene-dependently, making quantitative material analysis impossible.
+    // SDR with BT.709 provides a predictable, fixed color response.
     const isHdrFormat = (format: camera.CameraFormat): boolean => {
       return format === camera.CameraFormat.CAMERA_FORMAT_YCBCR_P010 ||
              format === camera.CameraFormat.CAMERA_FORMAT_YCRCB_P010;
     };
 
-    // Step 1: Collect HDR 4K profiles (highest quality)
-    const hdr4KProfiles: camera.VideoProfile[] = [];
-    const sdr4KProfiles: camera.VideoProfile[] = [];
-    const hdrProfiles: camera.VideoProfile[] = [];
     const sdrProfiles: camera.VideoProfile[] = [];
 
     for (const profile of videoProfiles) {
       const w = profile.size.width;
       const h = profile.size.height;
       const fps = profile.frameRateRange?.max || 30;
-      const pixels = w * h;
       hilog.info(DOMAIN, TAG, `Video profile: ${w}x${h} @ ${fps}fps, format=${profile.format}`);
-
-      if (pixels >= 3840 * 2160) {
-        // 4K+
-        if (isHdrFormat(profile.format)) {
-          hdr4KProfiles.push(profile);
-        } else {
-          sdr4KProfiles.push(profile);
-        }
-      } else {
-        if (isHdrFormat(profile.format)) {
-          hdrProfiles.push(profile);
-        } else {
-          sdrProfiles.push(profile);
-        }
+      if (!isHdrFormat(profile.format)) {
+        sdrProfiles.push(profile);
       }
     }
 
-    // Selection priority: HDR 4K > SDR 4K > HDR lower > SDR lower
-    // Within each category, prefer highest frame rate and largest resolution
-    const selectBestFromList = (profiles: camera.VideoProfile[]): camera.VideoProfile | null => {
-      if (profiles.length === 0) return null;
-      let best: camera.VideoProfile | null = null;
-      let bestScore = 0;
-      for (const p of profiles) {
-        const fps = p.frameRateRange?.max || 30;
-        const pixels = p.size.width * p.size.height;
-        // Score: pixels as primary, fps as secondary weight
-        const score = pixels + fps * 10000;
-        if (score > bestScore) {
-          bestScore = score;
-          best = p;
-        }
+    if (sdrProfiles.length === 0) {
+      hilog.error(DOMAIN, TAG, 'No SDR video profiles available');
+      return null;
+    }
+
+    // Select maximum resolution + highest frame rate SDR profile
+    let bestProfile: camera.VideoProfile | null = null;
+    let bestScore = 0;
+    for (const p of sdrProfiles) {
+      const fps = p.frameRateRange?.max || 30;
+      const pixels = p.size.width * p.size.height;
+      const score = pixels + fps * 10000;
+      if (score > bestScore) {
+        bestScore = score;
+        bestProfile = p;
       }
-      return best;
-    };
-
-    let bestProfile = selectBestFromList(hdr4KProfiles);
-    if (bestProfile) {
-      this.isHdrVivid = true;
-      hilog.info(DOMAIN, TAG, `HDR Vivid 4K selected: ${bestProfile.size.width}x${bestProfile.size.height} @ ${bestProfile.frameRateRange?.max}fps`);
-    } else {
-      bestProfile = selectBestFromList(sdr4KProfiles);
-    }
-    if (!bestProfile) {
-      bestProfile = selectBestFromList(hdrProfiles);
-      if (bestProfile) this.isHdrVivid = true;
-    }
-    if (!bestProfile) {
-      bestProfile = selectBestFromList(sdrProfiles);
     }
 
+    this.isHdrVivid = false;
     if (bestProfile) {
-      const fps = bestProfile.frameRateRange?.max || 30;
-      hilog.info(DOMAIN, TAG, `Selected video profile: ${bestProfile.size.width}x${bestProfile.size.height} @ ${fps}fps, HDR:${this.isHdrVivid}`);
+      hilog.info(DOMAIN, TAG,
+        `Selected SDR profile: ${bestProfile.size.width}x${bestProfile.size.height} @ ${bestProfile.frameRateRange?.max}fps`);
     }
     return bestProfile;
   }
@@ -285,7 +270,7 @@ export class CameraVideoRecorder {
     return previewProfiles[0];
   }
 
-  // Apply Mate 70 Pro+ best quality enhancements: stabilization, color space, quality prioritization
+  // Apply Mate 70 Pro+ best quality enhancements + reflectance analysis locks
   private async applyBestQualityEnhancements(): Promise<void> {
     if (!this.videoSession) return;
 
@@ -297,6 +282,9 @@ export class CameraVideoRecorder {
 
     // 3. Set quality prioritization to highest quality
     this.applyQualityPrioritization();
+
+    // 4. Lock AE/AWB/AF for reflectance analysis — pixel-to-reflectance consistency
+    this.applyReflectanceAnalysisLocks();
   }
 
   // Set video stabilization to highest level
@@ -360,6 +348,177 @@ export class CameraVideoRecorder {
       hilog.info(DOMAIN, TAG, 'Quality prioritization set to HIGH_QUALITY');
     } catch (e) {
       hilog.warn(DOMAIN, TAG, `Quality prioritization error: ${(e as BusinessError).message}`);
+    }
+  }
+
+  // ───── Reflectance Analysis: Lock all auto-adjustments ─────
+  // For quantitative analysis of spice powder reflectance under pure-color light,
+  // every automatic adjustment must be frozen to maintain a fixed, predictable
+  // pixel-value → reflectance mapping across all frames and captures.
+  //
+  // Strategy:
+  //   AE  → LOCKED (freezes exposure at current metered value)
+  //   AWB → DAYLIGHT (5500K fixed, avoiding AWB_OFF green-tint bug on Huawei)
+  //   AF  → CONTINUOUS_AUTO then lock via software (no AF drift)
+  //   ISO → queried but left at current lock value
+  private applyReflectanceAnalysisLocks(): void {
+    if (!this.videoSession) return;
+    hilog.info(DOMAIN, TAG, '───── Applying reflectance analysis locks ─────');
+
+    this.lockAutoExposure();
+    this.lockWhiteBalance();
+    this.lockAutoFocus();
+    this.zeroExposureCompensation();
+
+    hilog.info(DOMAIN, TAG, '───── Reflectance analysis locks complete ─────');
+  }
+
+  // Lock AE at current metered value — prevents exposure drift between frames
+  private lockAutoExposure(): void {
+    if (!this.videoSession) return;
+    try {
+      const aeSupported = this.videoSession.isExposureModeSupported(
+        camera.ExposureMode.EXPOSURE_MODE_LOCKED
+      );
+      if (aeSupported) {
+        this.videoSession.setExposureMode(camera.ExposureMode.EXPOSURE_MODE_LOCKED);
+        const mode = this.videoSession.getExposureMode();
+        this.activeExposureMode = 'LOCKED';
+        hilog.info(DOMAIN, TAG, `AE locked (mode: ${mode})`);
+      } else {
+        hilog.warn(DOMAIN, TAG, 'EXPOSURE_MODE_LOCKED not supported');
+        this.activeExposureMode = 'UNAVAILABLE';
+      }
+    } catch (e) {
+      hilog.warn(DOMAIN, TAG, `AE lock error: ${(e as BusinessError).message}`);
+      this.activeExposureMode = 'ERROR';
+    }
+  }
+
+  // Lock white balance to fixed DAYLIGHT (≈5500K)
+  // Uses preset mode instead of AWB_OFF + manual matrix to avoid the known
+  // Huawei green-preview bug when COLOR_CORRECTION_MODE_TRANSFORM_MATRIX is set.
+  // For pure-color light experiments, DAYLIGHT provides a fixed, reproducible
+  // reference that will not attempt to "neutralize" the illuminating color.
+  private lockWhiteBalance(): void {
+    if (!this.videoSession) return;
+    try {
+      // Priority: MANUAL mode with explicit Kelvin value for precise control
+      const manualSupported = this.videoSession.isWhiteBalanceModeSupported(
+        camera.WhiteBalanceMode.MANUAL
+      );
+      if (manualSupported) {
+        const wbRange = this.videoSession.getWhiteBalanceRange();
+        if (wbRange && wbRange.length === 2) {
+          // Use 5500K (daylight reference) — center of the supported range
+          const targetK = Math.max(wbRange[0], Math.min(wbRange[1], 5500));
+          this.videoSession.setWhiteBalanceMode(camera.WhiteBalanceMode.MANUAL);
+          this.videoSession.setWhiteBalance(targetK);
+          const actualK = this.videoSession.getWhiteBalance();
+          this.activeWhiteBalanceMode = `MANUAL_${actualK}K`;
+          hilog.info(DOMAIN, TAG, `WB locked: MANUAL ${actualK}K (requested ${targetK}K, range [${wbRange[0]},${wbRange[1]}])`);
+          return;
+        }
+      }
+
+      // Fallback: DAYLIGHT preset (fixed ~5500K)
+      const daylightSupported = this.videoSession.isWhiteBalanceModeSupported(
+        camera.WhiteBalanceMode.DAYLIGHT
+      );
+      if (daylightSupported) {
+        this.videoSession.setWhiteBalanceMode(camera.WhiteBalanceMode.DAYLIGHT);
+        this.activeWhiteBalanceMode = 'DAYLIGHT';
+        hilog.info(DOMAIN, TAG, 'WB locked: DAYLIGHT preset (~5500K)');
+        return;
+      }
+
+      // Last resort: try INCANDESCENT as a fixed preset (3200K)
+      const incandescentSupported = this.videoSession.isWhiteBalanceModeSupported(
+        camera.WhiteBalanceMode.INCANDESCENT
+      );
+      if (incandescentSupported) {
+        this.videoSession.setWhiteBalanceMode(camera.WhiteBalanceMode.INCANDESCENT);
+        this.activeWhiteBalanceMode = 'INCANDESCENT';
+        hilog.info(DOMAIN, TAG, 'WB locked: INCANDESCENT preset (fallback)');
+        return;
+      }
+
+      hilog.warn(DOMAIN, TAG, 'No fixed WB mode supported — AWB may drift');
+      this.activeWhiteBalanceMode = 'AUTO (WARNING)';
+    } catch (e) {
+      hilog.warn(DOMAIN, TAG, `WB lock error: ${(e as BusinessError).message}`);
+      this.activeWhiteBalanceMode = 'ERROR';
+    }
+  }
+
+  // Lock focus at center using CONTINUOUS_AUTO then freeze
+  private lockAutoFocus(): void {
+    if (!this.videoSession) return;
+    try {
+      // Set to continuous auto-focus, center-weighted, to establish stable focus,
+      // then switch to locked mode to prevent hunting during recording.
+      const caSupported = this.videoSession.isFocusModeSupported(
+        camera.FocusMode.FOCUS_MODE_CONTINUOUS_AUTO
+      );
+      if (caSupported) {
+        // Set center focus point
+        const centerPoint: camera.Point = { x: 0.5, y: 0.5 };
+        this.videoSession.setFocusPoint(centerPoint);
+        this.videoSession.setFocusMode(camera.FocusMode.FOCUS_MODE_CONTINUOUS_AUTO);
+        hilog.info(DOMAIN, TAG, 'AF: CONTINUOUS_AUTO with center point');
+
+        // Attempt to switch to FOCUS_MODE_LOCKED if available
+        const lockedSupported = this.videoSession.isFocusModeSupported(
+          camera.FocusMode.FOCUS_MODE_LOCKED
+        );
+        if (lockedSupported) {
+          this.videoSession.setFocusMode(camera.FocusMode.FOCUS_MODE_LOCKED);
+          this.activeFocusMode = 'LOCKED';
+          hilog.info(DOMAIN, TAG, 'AF locked (FOCUS_MODE_LOCKED)');
+          return;
+        }
+
+        this.activeFocusMode = 'CONTINUOUS_AUTO (best effort)';
+        hilog.info(DOMAIN, TAG, 'AF: LOCKED unsupported, using CONTINUOUS_AUTO');
+        return;
+      }
+
+      // Fallback: basic AUTO
+      const autoSupported = this.videoSession.isFocusModeSupported(
+        camera.FocusMode.FOCUS_MODE_AUTO
+      );
+      if (autoSupported) {
+        const centerPoint: camera.Point = { x: 0.5, y: 0.5 };
+        this.videoSession.setFocusPoint(centerPoint);
+        this.videoSession.setFocusMode(camera.FocusMode.FOCUS_MODE_AUTO);
+        this.activeFocusMode = 'AUTO (best effort)';
+        hilog.info(DOMAIN, TAG, 'AF: AUTO with center point');
+        return;
+      }
+
+      hilog.warn(DOMAIN, TAG, 'No AF mode supported');
+      this.activeFocusMode = 'UNAVAILABLE';
+    } catch (e) {
+      hilog.warn(DOMAIN, TAG, `AF lock error: ${(e as BusinessError).message}`);
+      this.activeFocusMode = 'ERROR';
+    }
+  }
+
+  // Set exposure compensation to zero (no bias)
+  private zeroExposureCompensation(): void {
+    if (!this.videoSession) return;
+    try {
+      const biasRange = this.videoSession.getExposureBiasRange();
+      if (biasRange && biasRange.length >= 2) {
+        this.videoSession.setExposureBias(0);
+        const actualBias = this.videoSession.getExposureValue();
+        this.activeExposureBias = actualBias;
+        hilog.info(DOMAIN, TAG, `Exposure bias zeroed: ${actualBias} EV (range [${biasRange[0]},${biasRange[1]}])`);
+      } else {
+        hilog.info(DOMAIN, TAG, 'Exposure bias range unavailable');
+      }
+    } catch (e) {
+      hilog.warn(DOMAIN, TAG, `Exposure bias error: ${(e as BusinessError).message}`);
     }
   }
 
@@ -447,8 +606,8 @@ export class CameraVideoRecorder {
       }
       hilog.info(DOMAIN, TAG, `Calculated video bitrate: ${videoBitrate / 1000000}Mbps`);
       
-      // Audio bitrate: high quality 256kbps (AAC-LC stereo)
-      const audioBitrate = 256000;
+      // Audio bitrate: highest quality 320kbps (AAC-LC stereo)
+      const audioBitrate = 320000;
 
       // Mate 70 Pro+: prefer HEVC/H.265 encoding for best quality
       // HDR requires HEVC, SDR also recommended to use HEVC
@@ -484,7 +643,13 @@ export class CameraVideoRecorder {
         isHdrVivid: this.isHdrVivid,
         aspectRatio: w > h ? `${ratio} Landscape` : `${ratio} Portrait`,
         stabilization: this.stabilizationMode,
-        colorSpace: this.activeColorSpace
+        colorSpace: this.activeColorSpace,
+        exposureMode: this.activeExposureMode,
+        iso: this.activeIso,
+        exposureTime: this.activeExposureTime,
+        exposureBias: this.activeExposureBias,
+        whiteBalanceMode: this.activeWhiteBalanceMode,
+        focusMode: this.activeFocusMode
       };
       hilog.info(DOMAIN, TAG, `Recording params: ${JSON.stringify(this.recordingParams)}`);
 

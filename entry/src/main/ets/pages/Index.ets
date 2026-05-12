@@ -33,6 +33,13 @@ struct Index {
   @State currentAspectRatio: string = '';
   @State currentStabilization: string = '';
   @State currentColorSpace: string = '';
+  // Reflectance analysis locked parameters
+  @State currentExposureMode: string = '';
+  @State currentIso: number = 0;
+  @State currentExposureTime: number = 0;
+  @State currentExposureBias: number = 0;
+  @State currentWhiteBalanceMode: string = '';
+  @State currentFocusMode: string = '';
   
   private context: common.UIAbilityContext | null = null;
   private recordingManager: RecordingManager | null = null;
@@ -165,6 +172,12 @@ struct Index {
         this.currentAspectRatio = params.aspectRatio;
         this.currentStabilization = params.stabilization ?? '';
         this.currentColorSpace = params.colorSpace ?? '';
+        this.currentExposureMode = params.exposureMode ?? '';
+        this.currentIso = params.iso ?? 0;
+        this.currentExposureTime = params.exposureTime ?? 0;
+        this.currentExposureBias = params.exposureBias ?? 0;
+        this.currentWhiteBalanceMode = params.whiteBalanceMode ?? '';
+        this.currentFocusMode = params.focusMode ?? '';
         
         // Update videoInfo display
         const resName = this.getResolutionName(params.resolution);
@@ -402,21 +415,48 @@ struct Index {
               .fontColor('#CCCCCC')
               .margin({ bottom: 12 })
 
+            Text('Reflectance Locks')
+              .fontSize(16)
+              .fontWeight(FontWeight.Bold)
+              .fontColor('#00FF88')
+              .margin({ bottom: 12 })
+
+            Text(`AE: ${this.currentExposureMode || 'Detecting...'}`)
+              .fontSize(13)
+              .fontColor('#00FF88')
+              .margin({ bottom: 4 })
+            Text(`AWB: ${this.currentWhiteBalanceMode || 'Detecting...'}`)
+              .fontSize(13)
+              .fontColor('#00FF88')
+              .margin({ bottom: 4 })
+            Text(`AF: ${this.currentFocusMode || 'Detecting...'}`)
+              .fontSize(13)
+              .fontColor('#00FF88')
+              .margin({ bottom: 4 })
+            Text(`EV Bias: ${this.currentExposureBias} EV`)
+              .fontSize(13)
+              .fontColor('#00FF88')
+              .margin({ bottom: 12 })
+
             Text('Features')
               .fontSize(16)
               .fontWeight(FontWeight.Bold)
               .fontColor(Color.White)
               .margin({ bottom: 12 })
 
-            Text('• Mate 70 Pro+ front cam')
+            Text('• AE/AWB/AF locked')
               .fontSize(13)
               .fontColor('#CCCCCC')
               .margin({ bottom: 4 })
-            Text('• HDR Vivid + HEVC encoding')
+            Text('• SDR BT.709 fixed gamut')
               .fontSize(13)
               .fontColor('#CCCCCC')
               .margin({ bottom: 4 })
-            Text('• Auto max parameters')
+            Text('• WB DAYLIGHT ~5500K')
+              .fontSize(13)
+              .fontColor('#CCCCCC')
+              .margin({ bottom: 4 })
+            Text('• EV=0, no HDR tone-map')
               .fontSize(13)
               .fontColor('#CCCCCC')
               .margin({ bottom: 4 })
